@@ -1,0 +1,67 @@
+import fetch from "node-fetch";
+import { WebhookClient } from "discord.js";
+import express from "express";
+
+// Replace with your actual values
+const PHOTON_APP_ID = "dd31afdf-4657-47cd-85b2-03b7188138f6"; // Same for Realtime & Voice
+const PHOTON_API_TOKEN = "2d73bf22-88ea-4fa1-8df3-39d53438f730"; // Get from Photon Dashboard
+const DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1409687730471964852/U-TYyvwUCa6f9n_JPmTY5gZNP4E5C2kQgta7Vjje5iEHdZcfkp27EEMyBf9GHlSDFeLy";
+
+// Fetch stats from Photon Cloud Dashboard API
+async function getPhotonStats(region = "eu") {
+    // Docs: https://doc.photonengine.com/en-us/server/current/reference/dashboard-api
+    // Example endpoint for status
+    const url = `https://dashboard.photonengine.com/api/app/${PHOTON_APP_ID}/status?region=${region}`;
+    const response = await fetch(url, {
+        method: "GET",
+        headers: {
+            "X-Photon-Token": PHOTON_API_TOKEN,
+            "Content-Type": "application/json"
+        }
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+
+    // Typical fields (see Photon docs for details)
+    return {
+        status: data.Status || "Unknown",
+        region: region,
+        onlineUsers: data.OnlineUsers || 0,
+        rooms: data.Rooms || 0,
+        servers: data.Servers || 0
+    };
+}
+
+// Send stats to Discord via webhook
+async function sendStatsToDiscord(region = "eu") {
+    const webhook = new WebhookClient({ url: DISCORD_WEBHOOK_URL });
+    const stats = await getPhotonStats(region);
+
+    if (!stats) {
+        await webhook.send({ content: "Photon Server Info: Unable to fetch status." });
+        return;
+    }
+
+    const message =
+`**Photon Server Status (${stats.region.toUpperCase()}):** ${stats.status}
+**Online Users (Realtime + Voice):** ${stats.onlineUsers}
+**Rooms:** ${stats.rooms}
+**Servers:** ${stats.servers}`;
+
+    await webhook.send({ content: message });
+}
+
+// Express handler for Discord webhook
+const app = express();
+app.use(express.json());
+
+// Example: Discord webhook triggers this endpoint
+app.post("/discord-server", async (req, res) => {
+    // Optionally support region in the request
+    const region = req.body?.region || "eu";
+    await sendStatsToDiscord(region);
+    res.status(200).send("Photon (Realtime/Voice) server info sent to Discord!");
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Listening on ${PORT}`));
